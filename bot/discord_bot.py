@@ -25,7 +25,7 @@ class DiscordBot:
         cls.config_dict = bot.utils.config_to_dict(config_path)
 
         currencies = [currency.upper() for currency in cls.config_dict['signal_symbols'].keys()]
-        cls.parser = MessageParser(currencies, cls.config_dict['signal_symbols'])
+        cls.parser = MessageParser(currencies, cls.config_dict['mapping'])
 
     @classmethod
     def message_to_dict(cls, message_content: str) -> dict:

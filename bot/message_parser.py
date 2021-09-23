@@ -81,10 +81,10 @@ class MessageParser:
         match = self._patterns['currency'].match(line)
         if match is None:
             return {}
-        currency = match.group(1).upper()
+        currency = match.group(1).lower()
         if currency in self._replace_currencies.keys():
-            currency = self._replace_currencies[currency]
-        return {'currency': currency}
+            currency = self._replace_currencies[currency].lower()
+        return {'currency': currency.upper()}
 
     def _get_operation_dict(self, line: str) -> dict:
         match = self._patterns['operation'].match(line)
