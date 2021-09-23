@@ -11,7 +11,7 @@ class DiscordBot:
     config_dict = None
     socket = None
     parser = None
-    message_dict = {}
+    message_store = {}
 
     @classmethod
     def run(cls, config_path, socket_address):
@@ -42,11 +42,22 @@ class DiscordBot:
             return
 
     @classmethod
-    def create_message_for_socket(cls, message: discord.Message, old_or_reply_message: discord.Message) -> str or None:
-        if old_or_reply_message:
+    def add_message_in_store(cls, message: discord.Message) -> dict:
+        cls.message_store = {
+            message.id: {
+                'content': message.content,
+                'dict': cls.message_to_dict(message)
+            }
+        }
+        return cls.message_store[message.id]
 
-        if message.id not in cls.message_dict.keys():
+    @classmethod
+    def create_message_for_socket(cls, message: discord.Message,
+                                  old_or_reply_message: discord.Message or None) -> str or None:
 
+        if old_or_reply_message is None:
+            message_info = cls.add_message_in_store(message)
+        return f'{message_info}'
 
 
 @DiscordBot.bot.event
@@ -59,7 +70,7 @@ async def on_message(message):
     if message.author.name not in DiscordBot.listened_authors:
         return
 
-    response = DiscordBot.message_to_dict(message)
+    response = DiscordBot.create_message_for_socket(message, None)
     print(response)
 
 
