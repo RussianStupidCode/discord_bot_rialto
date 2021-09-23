@@ -14,6 +14,7 @@ def operation_to_number(operation_name: str) -> int:
         else:
             return 1
 
+
 class MessageParser:
     re_number = r"\d+\.?\d+"
 

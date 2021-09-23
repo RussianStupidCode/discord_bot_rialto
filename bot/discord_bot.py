@@ -119,7 +119,10 @@ class DiscordBot:
                               is_edit: bool = False, is_reply: bool = False) -> str:
 
         if message_info.get('close') is not None:
-            return f'd2m CloseTrade|{message_info["currency"]}|{message_info["close"]}|0||{message_id}'
+            result = f'd2m CloseTrade|{message_info["currency"]}|{message_info["close"]}|0||{message_id}'
+            if int(message_info['close']) == 100:
+                DiscordBot.clear_message(message_id)
+            return result
 
         reply = 1 if is_reply else 0
         symbol = message_info["currency"]
@@ -133,6 +136,10 @@ class DiscordBot:
         if is_edit:
             result = result.replace('NewMessage', 'NewMessage_edit')
         return result
+
+    @classmethod
+    def send_socket_message(cls, message: str):
+        cls.socket.send_string(message)
 
 
 @DiscordBot.bot.event
@@ -154,6 +161,7 @@ async def on_message(message):
 
     if DiscordBot.check_correct_message_dict_info(response):
         socket_message = DiscordBot.create_socket_message(response, message.id, False, is_reply)
+        DiscordBot.send_socket_message(socket_message)
         print(response)
         print(socket_message)
 
@@ -169,5 +177,6 @@ async def on_message_edit(old_message, new_message):
     response = DiscordBot.get_message_parse_info(new_message, old_message)
     if DiscordBot.check_correct_message_dict_info(response):
         socket_message = DiscordBot.create_socket_message(response, new_message.id, True)
+        DiscordBot.send_socket_message(socket_message)
         print(response)
         print(socket_message)
