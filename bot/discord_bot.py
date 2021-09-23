@@ -28,8 +28,8 @@ class DiscordBot:
         cls.parser = MessageParser(currencies, cls.config_dict['signal_symbols'])
 
     @classmethod
-    def message_to_dict(cls, message: discord.Message) -> dict:
-        lines = message.content.split('\n')
+    def message_to_dict(cls, message_content: str) -> dict:
+        lines = message_content.split('\n')
         dictionary = {}
         for line in lines:
             line_dict = cls.parser.line_parse(line)
@@ -42,22 +42,97 @@ class DiscordBot:
             return
 
     @classmethod
-    def add_message_in_store(cls, message: discord.Message) -> dict:
+    def add_message_in_store(cls, message_id: int, message_content: str) -> dict or None:
+        message_dictionary = cls.message_to_dict(message_content)
+        if len(message_dictionary.keys()) == 0:
+            return None
+
         cls.message_store = {
-            message.id: {
-                'content': message.content,
-                'dict': cls.message_to_dict(message)
+            message_id: {
+                'content': message_content,
+                'dict': message_dictionary
             }
         }
-        return cls.message_store[message.id]
+        return cls.message_store[message_id]
 
     @classmethod
-    def create_message_for_socket(cls, message: discord.Message,
-                                  old_or_reply_message: discord.Message or None) -> str or None:
+    def clear_message(cls, message_id):
+        if message_id in cls.message_store.keys():
+            del cls.message_store[message_id]
 
-        if old_or_reply_message is None:
-            message_info = cls.add_message_in_store(message)
-        return f'{message_info}'
+    @classmethod
+    def merge_message(cls, message: discord.Message, edit_or_reply_message: discord.Message) -> dict:
+        lines_original_message = cls.message_store[edit_or_reply_message.id]['content'].split('\n')
+
+        # create new_content
+        lines_new_message = message.content.split('\n')
+        new_content_lines = []
+        for line in lines_new_message:
+            if line not in lines_original_message:
+                new_content_lines.append(line)
+
+        new_content = "\n".join(new_content_lines)
+
+        old_dict_info_not_close = {**cls.message_store[edit_or_reply_message.id]['dict']}
+        # refresh close operation
+        if 'close' in old_dict_info_not_close.keys():
+            del old_dict_info_not_close['close']
+
+        new_message_info = cls.add_message_in_store(edit_or_reply_message.id, new_content)
+        new_message_info['dict'] = {
+            **old_dict_info_not_close,
+            **new_message_info['dict']
+        }
+        return new_message_info
+
+    @classmethod
+    def get_message_parse_info(cls, message: discord.Message,
+                               edit_or_reply_message: discord.Message or None) -> dict or None:
+
+        if edit_or_reply_message is None:
+            message_info = cls.add_message_in_store(message.id, message.content)
+        else:
+            if edit_or_reply_message.id not in cls.message_store.keys():
+                return None
+            message_info = cls.merge_message(message, edit_or_reply_message)
+
+        if message_info is None:
+            return None
+
+        dictionary = message_info['dict']
+        return dictionary
+
+    @classmethod
+    def check_correct_message_dict_info(cls, message_info: dict or None) -> bool:
+        if message_info is None:
+            return False
+        if message_info.get('currency') is None and message_info.get('operation') is None:
+            return False
+        if message_info.get('sl') is None and message_info.get('close') is None:
+            return False
+        if message_info.get('close') is not None and message_info.get('currency') is None:
+            return False
+        return True
+
+    @classmethod
+    def create_socket_message(cls, message_info: dict, message_id: int,
+                              is_edit: bool = False, is_reply: bool = False) -> str:
+
+        if message_info.get('close') is not None:
+            return f'd2m CloseTrade|{message_info["currency"]}|{message_info["close"]}|0||{message_id}'
+
+        reply = 1 if is_reply else 0
+        symbol = message_info["currency"]
+        direction = message_info["operation"]
+        price = message_info["cost"]
+        risk = cls.config_dict['risk']['usual_risk']
+        sl = message_info["sl"]
+        tp = message_info.get('tp', '0')
+        result = f'd2m NewMessage|{reply}|{symbol}|{direction}|{price}|{risk}|{sl}|1|{tp}|||{message_id}'
+
+        if is_edit:
+            result = result.replace('NewMessage', 'NewMessage_edit')
+        return result
 
 
 @DiscordBot.bot.event
@@ -70,8 +145,17 @@ async def on_message(message):
     if message.author.name not in DiscordBot.listened_authors:
         return
 
-    response = DiscordBot.create_message_for_socket(message, None)
-    print(response)
+    is_reply = False
+    if message.reference:
+        response = DiscordBot.get_message_parse_info(message, message.reference.cached_message)
+        is_reply = True
+    else:
+        response = DiscordBot.get_message_parse_info(message, None)
+
+    if DiscordBot.check_correct_message_dict_info(response):
+        socket_message = DiscordBot.create_socket_message(response, message.id, False, is_reply)
+        print(response)
+        print(socket_message)
 
 
 @DiscordBot.bot.event
@@ -82,7 +166,8 @@ async def on_message_edit(old_message, new_message):
     if old_message.content == new_message.content:
         return
 
-    response = DiscordBot.create_message_for_socket(new_message, True)
-    if response:
-        DiscordBot.socket.send_string(response)
+    response = DiscordBot.get_message_parse_info(new_message, old_message)
+    if DiscordBot.check_correct_message_dict_info(response):
+        socket_message = DiscordBot.create_socket_message(response, new_message.id, True)
         print(response)
+        print(socket_message)
