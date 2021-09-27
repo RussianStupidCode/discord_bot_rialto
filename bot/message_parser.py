@@ -138,12 +138,3 @@ class MessageParser:
 
     def line_parse(self, line):
         return self.get_dict_line(line)
-
-
-if __name__ == "__main__":
-    m = MessageParser(['GBPJPY', 'GOLD', 'EURGBP'], {'EURGBP': 'GOLD'})
-    res = m.line_parse("GBPJPY SELL @ LIMIT @ 151.60")
-    print(res)
-    print(m.line_parse('TP 123.1'))
-    print(m.line_parse('MOVE sl  @ 123'))
-    print(m.line_parse('close @ 12 with'))

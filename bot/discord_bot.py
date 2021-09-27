@@ -3,6 +3,8 @@ import discord
 import zmq
 from discord.ext import commands
 from bot.message_parser import MessageParser
+from datetime import datetime
+import bot.logger as logger
 
 
 class DiscordBot:
@@ -12,6 +14,7 @@ class DiscordBot:
     socket = None
     parser = None
     message_store = {}
+    log_path = None
 
     @classmethod
     def run(cls, config_path, socket_address):
@@ -23,6 +26,9 @@ class DiscordBot:
         cls.socket = zmq.Context().socket(zmq.PUB)
         cls.socket.bind(socket_address)
         cls.config_dict = bot.utils.config_to_dict(config_path)
+
+        date = f'{datetime.now().date()}'.replace("-", "_")
+        cls.log_path = f'./log_{date}'
 
         currencies = [currency.upper() for currency in cls.config_dict['signal_symbols'].keys()]
         cls.parser = MessageParser(currencies, cls.config_dict['mapping'])
@@ -150,11 +156,15 @@ async def on_ready():
 @DiscordBot.bot.event
 async def on_message(message):
     if message.author.name not in DiscordBot.listened_authors:
+        log = logger.create_log_not_listened_author(message)
+        logger.out_log(log, DiscordBot.log_path)
         return
 
     is_reply = False
+    message_reference = None
     if message.reference:
-        response = DiscordBot.get_message_parse_info(message, message.reference.cached_message)
+        message_reference = message.reference.cached_message
+        response = DiscordBot.get_message_parse_info(message, message_reference)
         is_reply = True
     else:
         response = DiscordBot.get_message_parse_info(message, None)
@@ -162,13 +172,17 @@ async def on_message(message):
     if DiscordBot.check_correct_message_dict_info(response):
         socket_message = DiscordBot.create_socket_message(response, message.id, False, is_reply)
         DiscordBot.send_socket_message(socket_message)
-        print(response)
-        print(socket_message)
+        log_message = logger.create_log(message, socket_message, message_reference, is_reply)
+    else:
+        log_message = logger.create_log_uncorrect_message(message)
+    logger.out_log(log_message, DiscordBot.log_path)
 
 
 @DiscordBot.bot.event
 async def on_message_edit(old_message, new_message):
     if old_message.author.name not in DiscordBot.listened_authors:
+        log = logger.create_log_not_listened_author(new_message)
+        logger.out_log(log, DiscordBot.log_path)
         return
 
     if old_message.content == new_message.content:
@@ -178,5 +192,7 @@ async def on_message_edit(old_message, new_message):
     if DiscordBot.check_correct_message_dict_info(response):
         socket_message = DiscordBot.create_socket_message(response, new_message.id, True)
         DiscordBot.send_socket_message(socket_message)
-        print(response)
-        print(socket_message)
+        log_message = logger.create_log(new_message, socket_message, old_message)
+    else:
+        log_message = logger.create_log_uncorrect_message(new_message)
+    logger.out_log(log_message, DiscordBot.log_path)
