@@ -10,6 +10,8 @@ import bot.logger as logger
 class DiscordBot:
     bot = commands.Bot(command_prefix='', intents=discord.Intents.all())
     listened_authors = ['test-alerts', 'user', 'Alerts', 'Vendetta']
+    free_letter = ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+    closed_letter = []
     config_dict = None
     socket = None
     parser = None
@@ -22,13 +24,22 @@ class DiscordBot:
         cls.bot.run(cls.config_dict['bot_data']['bot_key'])
 
     @classmethod
+    def get_letter(cls, message_id):
+        if message_id in cls.message_store:
+            letter = cls.message_store[message_id]['letter']
+        else:
+            letter = cls.free_letter.pop()
+            cls.closed_letter.append(letter)
+        return letter
+
+    @classmethod
     def init(cls, config_path, socket_address):
         cls.socket = zmq.Context().socket(zmq.PUB)
         cls.socket.bind(socket_address)
         cls.config_dict = bot.utils.config_to_dict(config_path)
 
         date = f'{datetime.now().date()}'.replace("-", "_")
-        cls.log_path = f'./log_{date}'
+        cls.log_path = f'./log_{date}.txt'
 
         currencies = [currency.upper() for currency in cls.config_dict['signal_symbols'].keys()]
         cls.parser = MessageParser(currencies, cls.config_dict['mapping'])
@@ -53,17 +64,19 @@ class DiscordBot:
         if len(message_dictionary.keys()) == 0:
             return None
 
-        cls.message_store = {
-            message_id: {
+        cls.message_store[message_id] = {
                 'content': message_content,
-                'dict': message_dictionary
-            }
+                'dict': message_dictionary,
+                'letter': cls.get_letter(message_id)  # key for message
         }
         return cls.message_store[message_id]
 
     @classmethod
     def clear_message(cls, message_id):
         if message_id in cls.message_store.keys():
+            letter = cls.message_store[message_id]['letter']
+            cls.closed_letter.remove(letter)
+            cls.free_letter.append(letter)
             del cls.message_store[message_id]
 
     @classmethod
@@ -105,11 +118,12 @@ class DiscordBot:
         if message_info is None:
             return None
 
-        dictionary = message_info['dict']
+        dictionary = message_info
         return dictionary
 
     @classmethod
     def check_correct_message_dict_info(cls, message_info: dict or None) -> bool:
+        message_info = message_info['dict']
         if message_info is None:
             return False
         if message_info.get('currency') is None and message_info.get('operation') is None:
@@ -124,8 +138,11 @@ class DiscordBot:
     def create_socket_message(cls, message_info: dict, message_id: int,
                               is_edit: bool = False, is_reply: bool = False) -> str:
 
+        letter = message_info['letter']
+        message_info = message_info['dict']
+
         if message_info.get('close') is not None:
-            result = f'd2m CloseTrade|{message_info["currency"]}|{message_info["close"]}|0||{message_id}'
+            result = f'd2m CloseTrade|{message_info["currency"]}|{message_info["close"]}|0|{letter}|{message_id}'
             if int(message_info['close']) == 100:
                 DiscordBot.clear_message(message_id)
             return result
@@ -137,7 +154,7 @@ class DiscordBot:
         risk = cls.config_dict['risk']['usual_risk']
         sl = message_info["sl"]
         tp = message_info.get('tp', '0')
-        result = f'd2m NewMessage|{reply}|{symbol}|{direction}|{price}|{risk}|{sl}|1|{tp}|||{message_id}'
+        result = f'd2m NewMessage|{reply}|{symbol}|{direction}|{price}|{risk}|{sl}|1|{tp}|{letter}||{message_id}'
 
         if is_edit:
             result = result.replace('NewMessage', 'NewMessage_edit')
@@ -177,6 +194,10 @@ async def on_message(message):
         log_message = logger.create_log_uncorrect_message(message)
     logger.out_log(log_message, DiscordBot.log_path)
 
+    print(DiscordBot.free_letter)
+    print(DiscordBot.closed_letter)
+    print(DiscordBot.message_store)
+
 
 @DiscordBot.bot.event
 async def on_message_edit(old_message, new_message):
@@ -196,3 +217,7 @@ async def on_message_edit(old_message, new_message):
     else:
         log_message = logger.create_log_uncorrect_message(new_message)
     logger.out_log(log_message, DiscordBot.log_path)
+
+    print(DiscordBot.free_letter)
+    print(DiscordBot.closed_letter)
+    print(DiscordBot.message_store)
