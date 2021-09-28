@@ -24,10 +24,20 @@ class DiscordBot:
         cls.bot.run(cls.config_dict['bot_data']['bot_key'])
 
     @classmethod
+    def clear_not_full_close_message(cls):
+        filter_message = [(key, value['letter'])
+                          for key, value in cls.message_store.items() if value['dict'].get('close')]
+        key = max(filter_message, key=lambda x: x[1])[0]
+        cls.clear_message(key)
+
+    @classmethod
     def get_letter(cls, message_id):
         if message_id in cls.message_store:
             letter = cls.message_store[message_id]['letter']
         else:
+            if len(cls.free_letter) == 0:
+                cls.clear_not_full_close_message()
+
             letter = cls.free_letter.pop()
             cls.closed_letter.append(letter)
         return letter
@@ -194,10 +204,6 @@ async def on_message(message):
         log_message = logger.create_log_uncorrect_message(message)
     logger.out_log(log_message, DiscordBot.log_path)
 
-    print(DiscordBot.free_letter)
-    print(DiscordBot.closed_letter)
-    print(DiscordBot.message_store)
-
 
 @DiscordBot.bot.event
 async def on_message_edit(old_message, new_message):
@@ -217,7 +223,3 @@ async def on_message_edit(old_message, new_message):
     else:
         log_message = logger.create_log_uncorrect_message(new_message)
     logger.out_log(log_message, DiscordBot.log_path)
-
-    print(DiscordBot.free_letter)
-    print(DiscordBot.closed_letter)
-    print(DiscordBot.message_store)
